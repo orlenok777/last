@@ -114,7 +114,7 @@ const VoiceReminder = () => {
             startIcon={<MicIcon />}
             fullWidth
           >
-            Установить напоминание 10
+            Установить напоминание 11
           </Button>
         </div>
         {reminders.length > 0 && (
