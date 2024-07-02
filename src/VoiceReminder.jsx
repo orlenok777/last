@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import axios from "axios";
 import {
   Card,
   CardContent,
@@ -28,6 +29,20 @@ const VoiceReminder = () => {
   const [checkboxCount, setCheckboxCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
   const [currentReminderIndex, setCurrentReminderIndex] = useState(null);
+  const [blinkingEnabled, setBlinkingEnabled] = useState(true);
+
+  useEffect(() => {
+    const fetchReminders = async () => {
+      try {
+        const response = await axios.get("/api/reminders");
+        setReminders(response.data);
+      } catch (error) {
+        console.error("Error fetching reminders:", error);
+      }
+    };
+
+    fetchReminders();
+  }, []);
 
   const speak = useCallback(
     (text) => {
@@ -44,10 +59,18 @@ const VoiceReminder = () => {
     [audioEnabled],
   );
 
-  const handleSetReminder = () => {
-    setReminders([...reminders, { text: reminder, done: false }]);
-    setReminder("");
-    speak(`Хорошо, я буду напоминать вам каждые 5 секунд ${reminder}`);
+  const handleSetReminder = async () => {
+    try {
+      const response = await axios.post("/api/reminders", { text: reminder });
+      setReminders([
+        ...reminders,
+        { id: response.data.id, text: reminder, done: false },
+      ]);
+      setReminder("");
+      speak(`Хорошо, я буду напоминать вам каждые 5 секунд ${reminder}`);
+    } catch (error) {
+      console.error("Error adding reminder:", error);
+    }
   };
 
   const startAnnoying = () => {
@@ -58,29 +81,42 @@ const VoiceReminder = () => {
     setIsAnnoying(false);
   };
 
-  const handleCheckboxChange = (index) => {
-    const newReminders = reminders.map((reminder, i) => {
-      if (i === index) {
-        if (!reminder.done) {
-          setCompletedCount(completedCount + 1);
-        } else {
-          setCompletedCount(completedCount - 1);
+  const handleCheckboxChange = async (index) => {
+    const reminder = reminders[index];
+    try {
+      await axios.put(`/api/reminders/${reminder.id}`, {
+        done: !reminder.done,
+      });
+      const newReminders = reminders.map((reminder, i) => {
+        if (i === index) {
+          if (!reminder.done) {
+            setCompletedCount(completedCount + 1);
+          } else {
+            setCompletedCount(completedCount - 1);
+          }
+          return { ...reminder, done: !reminder.done };
         }
-        return { ...reminder, done: !reminder.done };
-      }
-      return reminder;
-    });
-    setReminders(newReminders);
-    setCheckboxCount(checkboxCount + 1);
+        return reminder;
+      });
+      setReminders(newReminders);
+      setCheckboxCount(checkboxCount + 1);
+    } catch (error) {
+      console.error("Error updating reminder:", error);
+    }
   };
 
-  const handleDeleteReminder = (index) => {
-    const deletedReminder = reminders[index];
-    if (deletedReminder.done) {
-      setCompletedCount(completedCount - 1);
+  const handleDeleteReminder = async (index) => {
+    const reminder = reminders[index];
+    try {
+      await axios.delete(`/api/reminders/${reminder.id}`);
+      if (reminder.done) {
+        setCompletedCount(completedCount - 1);
+      }
+      const newReminders = reminders.filter((_, i) => i !== index);
+      setReminders(newReminders);
+    } catch (error) {
+      console.error("Error deleting reminder:", error);
     }
-    const newReminders = reminders.filter((_, i) => i !== index);
-    setReminders(newReminders);
   };
 
   useEffect(() => {
@@ -102,18 +138,29 @@ const VoiceReminder = () => {
   }, [isAnnoying, reminders, speak]);
 
   useEffect(() => {
-    const colorInterval = setInterval(() => {
-      setBackgroundColor((prevColor) =>
-        prevColor === "white" ? "red" : "white",
-      );
-    }, 1000);
+    if (blinkingEnabled) {
+      const colorInterval = setInterval(() => {
+        setBackgroundColor((prevColor) =>
+          prevColor === "white" ? "red" : "white",
+        );
+      }, 1000);
 
-    return () => clearInterval(colorInterval);
-  }, []);
+      return () => clearInterval(colorInterval);
+    }
+  }, [blinkingEnabled]);
 
   const enableAudio = () => {
     setAudioEnabled(true);
     speak("Аудио включено");
+  };
+
+  const enableBlinking = () => {
+    setBlinkingEnabled(true);
+  };
+
+  const disableBlinking = () => {
+    setBlinkingEnabled(false);
+    setBackgroundColor("white"); // Reset background color to white when blinking is disabled
   };
 
   const buttonStyle = {
@@ -125,7 +172,7 @@ const VoiceReminder = () => {
   const reminderStyle = {
     textDecoration: "none",
     fontWeight: "bold",
-    fontSize: "1.5em",
+    fontSize: "2.5em",
     animation: "blink-animation 1s infinite",
   };
 
@@ -194,6 +241,12 @@ const VoiceReminder = () => {
                             textDecoration: reminder.done
                               ? "line-through"
                               : "none",
+                            fontWeight:
+                              currentReminderIndex === index
+                                ? "bold"
+                                : "normal",
+                            fontSize:
+                              currentReminderIndex === index ? "2em" : "1em",
                           }
                     }
                   />
@@ -262,6 +315,26 @@ const VoiceReminder = () => {
             sx={buttonStyle}
           >
             Остановить напоминания
+          </Button>
+        </div>
+        <div className="flex space-x-2 mt-4">
+          <Button
+            onClick={enableBlinking}
+            variant="contained"
+            color="secondary"
+            fullWidth
+            sx={buttonStyle}
+          >
+            Включить мигание фона
+          </Button>
+          <Button
+            onClick={disableBlinking}
+            variant="contained"
+            color="secondary"
+            fullWidth
+            sx={buttonStyle}
+          >
+            Отключить мигание фона
           </Button>
         </div>
         {!audioEnabled && (
