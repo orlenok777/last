@@ -13,11 +13,68 @@ import {
   ListItemText,
   ListItemSecondaryAction,
   IconButton,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
 } from "@mui/material";
 import MicIcon from "@mui/icons-material/Mic";
 import SpeakerIcon from "@mui/icons-material/Speaker";
 import StopIcon from "@mui/icons-material/Stop";
 import DeleteIcon from "@mui/icons-material/Delete";
+import { DndProvider, useDrag, useDrop } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+
+const ItemTypes = {
+  REMINDER: "reminder",
+};
+
+const DraggableListItem = ({ reminder, index, moveReminder }) => {
+  const ref = React.useRef(null);
+  const [, drop] = useDrop({
+    accept: ItemTypes.REMINDER,
+    hover(item) {
+      if (!ref.current) {
+        return;
+      }
+      const dragIndex = item.index;
+      const hoverIndex = index;
+      if (dragIndex === hoverIndex) {
+        return;
+      }
+      moveReminder(dragIndex, hoverIndex);
+      item.index = hoverIndex;
+    },
+  });
+
+  const [{ isDragging }, drag] = useDrag({
+    type: ItemTypes.REMINDER,
+    item: { type: ItemTypes.REMINDER, index },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  drag(drop(ref));
+
+  return (
+    <ListItem ref={ref} style={{ opacity: isDragging ? 0.5 : 1 }}>
+      <ListItemText primary={reminder.text} />
+      <Button
+        variant="contained"
+        color="secondary"
+        onClick={() => moveReminder(index)}
+      >
+        Удалить
+      </Button>
+    </ListItem>
+  );
+};
 
 const VoiceReminder = () => {
   const [reminder, setReminder] = useState("");
@@ -30,14 +87,85 @@ const VoiceReminder = () => {
   const [completedCount, setCompletedCount] = useState(0);
   const [currentReminderIndex, setCurrentReminderIndex] = useState(null);
   const [blinkingEnabled, setBlinkingEnabled] = useState(true);
+  const [selectedPackage, setSelectedPackage] = useState("");
+  const [sortOrder, setSortOrder] = useState("date");
+  const [openNoteDialog, setOpenNoteDialog] = useState(false);
+  const [note, setNote] = useState("");
+  const [noteIndex, setNoteIndex] = useState(null);
+  const [predefinedReminders, setPredefinedReminders] = useState([
+    "Выпить воды",
+    "Сделать перерыв",
+    "Размяться",
+    "Проверить почту",
+    "Позвонить другу",
+    "Принять лекарства",
+    "Проверить социальные сети",
+    "Сделать дыхательные упражнения",
+    "Написать список дел",
+    "Сходить на прогулку",
+    "Подъём",
+    "Выпить три стакана воды",
+    "Принять таблетки",
+    "Позавтракать",
+    "Сделать спорт 10 минут",
+    "Сделать холодную ванну 10 минут",
+    "Убрать квартиру 10 минут",
+    "Покормить кошку",
+    "Медитация 10 минут",
+    "Выход на работу",
+  ]);
+
+  const reminderPackages = {
+    "Здоровье и фитнес": [
+      "Выпить воды",
+      "Размяться",
+      "Сделать дыхательные упражнения",
+      "Сходить на прогулку",
+    ],
+    "Работа и продуктивность": [
+      "Сделать перерыв",
+      "Проверить почту",
+      "Написать список дел",
+      "Проверить социальные сети",
+    ],
+    "Личные дела": [
+      "Позвонить другу",
+      "Принять лекарства",
+      "Уделить время хобби",
+      "Отправить сообщение семье",
+    ],
+    "Утренняя рутина": [
+      "Подъём",
+      "Выпить три стакана воды",
+      "Принять таблетки",
+      "Позавтракать",
+      "Сделать спорт 10 минут",
+      "Сделать холодную ванну 10 минут",
+      "Убрать квартиру 10 минут",
+      "Покормить кошку",
+      "Медитация 10 минут",
+      "Выход на работу",
+    ],
+    "Дневная рутина": [
+      "Сделать перерыв",
+      "Выпить воды",
+      "Размяться",
+      "Проверить почту",
+    ],
+  };
 
   useEffect(() => {
     const fetchReminders = async () => {
       try {
         const response = await axios.get("/api/reminders");
-        setReminders(response.data);
+        setReminders(
+          response.data.map((r) => ({
+            ...r,
+            createdAt: new Date(r.createdAt),
+          })),
+        );
       } catch (error) {
-        console.error("Error fetching reminders:", error);
+        console.error("Ошибка при получении напоминаний:", error);
       }
     };
 
@@ -59,17 +187,17 @@ const VoiceReminder = () => {
     [audioEnabled],
   );
 
-  const handleSetReminder = async () => {
+  const handleSetReminder = async (text = reminder) => {
     try {
-      const response = await axios.post("/api/reminders", { text: reminder });
+      const response = await axios.post("/api/reminders", { text });
       setReminders([
         ...reminders,
-        { id: response.data.id, text: reminder, done: false },
+        { id: response.data.id, text, done: false, createdAt: new Date() },
       ]);
       setReminder("");
-      speak(`Хорошо, я буду напоминать вам каждые 5 секунд ${reminder}`);
+      speak(`Хорошо, я буду напоминать вам каждые 5 секунд ${text}`);
     } catch (error) {
-      console.error("Error adding reminder:", error);
+      console.error("Ошибка при добавлении напоминания:", error);
     }
   };
 
@@ -101,7 +229,7 @@ const VoiceReminder = () => {
       setReminders(newReminders);
       setCheckboxCount(checkboxCount + 1);
     } catch (error) {
-      console.error("Error updating reminder:", error);
+      console.error("Ошибка при обновлении напоминания:", error);
     }
   };
 
@@ -115,8 +243,25 @@ const VoiceReminder = () => {
       const newReminders = reminders.filter((_, i) => i !== index);
       setReminders(newReminders);
     } catch (error) {
-      console.error("Error deleting reminder:", error);
+      console.error("Ошибка при удалении напоминания:", error);
     }
+  };
+
+  const handleAddNote = (index) => {
+    setNoteIndex(index);
+    setNote(reminders[index].note || "");
+    setOpenNoteDialog(true);
+  };
+
+  const saveNote = () => {
+    const newReminders = reminders.map((reminder, i) => {
+      if (i === noteIndex) {
+        return { ...reminder, note };
+      }
+      return reminder;
+    });
+    setReminders(newReminders);
+    setOpenNoteDialog(false);
   };
 
   useEffect(() => {
@@ -161,6 +306,44 @@ const VoiceReminder = () => {
   const disableBlinking = () => {
     setBlinkingEnabled(false);
     setBackgroundColor("white"); // Reset background color to white when blinking is disabled
+  };
+
+  const handleSelectPackage = (event) => {
+    const selected = event.target.value;
+    setSelectedPackage(selected);
+    if (selected) {
+      reminderPackages[selected].forEach((task) => handleSetReminder(task));
+    }
+  };
+
+  const handleSortChange = (event) => {
+    setSortOrder(event.target.value);
+  };
+
+  const getSortedReminders = () => {
+    return reminders.sort((a, b) => {
+      if (sortOrder === "date") {
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      } else if (sortOrder === "status") {
+        return a.done - b.done;
+      }
+      return 0;
+    });
+  };
+
+  const movePredefinedReminder = (dragIndex, hoverIndex) => {
+    const dragReminder = predefinedReminders[dragIndex];
+    const updatedReminders = [...predefinedReminders];
+    updatedReminders.splice(dragIndex, 1);
+    updatedReminders.splice(hoverIndex, 0, dragReminder);
+    setPredefinedReminders(updatedReminders);
+  };
+
+  const handleAddPredefinedReminder = () => {
+    if (reminder) {
+      setPredefinedReminders([...predefinedReminders, reminder]);
+      setReminder("");
+    }
   };
 
   const buttonStyle = {
@@ -214,7 +397,7 @@ const VoiceReminder = () => {
             sx={{ width: "100%" }}
           />
           <Button
-            onClick={handleSetReminder}
+            onClick={() => handleSetReminder()}
             variant="contained"
             color="primary"
             startIcon={<MicIcon />}
@@ -224,16 +407,83 @@ const VoiceReminder = () => {
             Установить напоминание
           </Button>
         </div>
+        <div className="flex space-x-2 mb-4" style={{ marginTop: "16px" }}>
+          <TextField
+            value={reminder}
+            onChange={(e) => setReminder(e.target.value)}
+            placeholder="Добавить часто задаваемое задание"
+            fullWidth
+            sx={{ width: "100%" }}
+          />
+          <Button
+            onClick={handleAddPredefinedReminder}
+            variant="contained"
+            color="primary"
+            fullWidth
+            sx={buttonStyle}
+          >
+            Добавить
+          </Button>
+        </div>
+        <div style={{ marginTop: "16px" }}>
+          <Typography variant="body1">Часто задаваемые задания:</Typography>
+          <DndProvider backend={HTML5Backend}>
+            <List sx={{ marginTop: "16px" }}>
+              {predefinedReminders.map((predefinedReminder, index) => (
+                <DraggableListItem
+                  key={index}
+                  index={index}
+                  reminder={{ text: predefinedReminder }}
+                  moveReminder={movePredefinedReminder}
+                />
+              ))}
+            </List>
+          </DndProvider>
+        </div>
+        <div style={{ marginTop: "16px" }}>
+          <FormControl fullWidth>
+            <InputLabel id="select-package-label">
+              Выберите пакет заданий
+            </InputLabel>
+            <Select
+              labelId="select-package-label"
+              value={selectedPackage}
+              onChange={handleSelectPackage}
+              fullWidth
+            >
+              {Object.keys(reminderPackages).map((packageName, index) => (
+                <MenuItem key={index} value={packageName}>
+                  {packageName}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </div>
+        <div style={{ marginTop: "16px" }}>
+          <FormControl fullWidth>
+            <InputLabel id="sort-order-label">Сортировать по</InputLabel>
+            <Select
+              labelId="sort-order-label"
+              value={sortOrder}
+              onChange={handleSortChange}
+              fullWidth
+            >
+              <MenuItem value="date">Дате добавления</MenuItem>
+              <MenuItem value="status">Статусу выполнения</MenuItem>
+            </Select>
+          </FormControl>
+        </div>
         {reminders.length > 0 && (
           <div>
             <Typography variant="body1" style={{ marginTop: "16px" }}>
               Текущие напоминания:
             </Typography>
             <List sx={{ marginTop: "20px" }}>
-              {reminders.map((reminder, index) => (
+              {getSortedReminders().map((reminder, index) => (
                 <ListItem key={index}>
                   <ListItemText
-                    primary={reminder.text}
+                    primary={`${reminder.text} (${Math.floor((new Date() - new Date(reminder.createdAt)) / 60000)} минут назад)`}
+                    secondary={reminder.note}
                     sx={
                       currentReminderIndex === index
                         ? reminderStyle
@@ -251,6 +501,13 @@ const VoiceReminder = () => {
                     }
                   />
                   <ListItemSecondaryAction>
+                    <IconButton
+                      edge="end"
+                      aria-label="add-note"
+                      onClick={() => handleAddNote(index)}
+                    >
+                      <MicIcon />
+                    </IconButton>
                     <Checkbox
                       edge="end"
                       checked={reminder.done}
@@ -347,6 +604,31 @@ const VoiceReminder = () => {
           </Typography>
         )}
       </CardContent>
+      <Dialog open={openNoteDialog} onClose={() => setOpenNoteDialog(false)}>
+        <DialogTitle>Добавить заметку</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Добавьте заметку к этому заданию.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Заметка"
+            type="text"
+            fullWidth
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenNoteDialog(false)} color="primary">
+            Отмена
+          </Button>
+          <Button onClick={saveNote} color="primary">
+            Сохранить
+          </Button>
+        </DialogActions>
+      </Dialog>
       <style>
         {`
           @keyframes blink-animation {
